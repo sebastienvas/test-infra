@@ -1,12 +1,10 @@
 package poolmanager
 
 import (
-	"flag"
 	"fmt"
 	"time"
 
 	"github.com/golang/glog"
-	"k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -14,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
 )
 
@@ -194,50 +191,4 @@ func (c *Controller) processNextItem() bool {
 	// Handle the error if something went wrong during the execution of the business logic
 	c.handleErr(err, key)
 	return true
-}
-
-type fakeHandler struct {
-}
-
-func (h fakeHandler) ProvisionCluster(r *ClusterRequest) error {
-	glog.Infof("Created Request %v", r.Name)
-	return nil
-}
-
-func (h fakeHandler) RecycleCluster(r *ClusterRequest) error {
-	glog.Infof("RecycleCluser %v", r.Name)
-	return nil
-}
-
-func main() {
-	var kubeconfig string
-	var master string
-
-	flag.StringVar(&kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
-	flag.StringVar(&master, "master", "", "master url")
-	flag.Parse()
-
-	// creates the connection
-	config, err := clientcmd.BuildConfigFromFlags(master, kubeconfig)
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	// creates the clientset
-	restClient, err := rest.RESTClientFor(config)
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	handler := fakeHandler{}
-
-	controller := NewController(restClient, v1.NamespaceDefault, 60*time.Second, handler)
-
-	// Now let's start the controller
-	stop := make(chan struct{})
-	defer close(stop)
-	go controller.Run(stop)
-
-	// Wait forever
-	select {}
 }
