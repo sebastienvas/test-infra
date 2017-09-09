@@ -15,6 +15,11 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
+const (
+	Group   = "testing.istio.io"
+	Version = "v1"
+)
+
 type ClusterRequestHandler interface {
 	ProvisionCluster(r *ClusterRequest) error
 	RecycleCluster(r *ClusterRequest) error

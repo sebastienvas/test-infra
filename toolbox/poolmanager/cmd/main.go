@@ -7,7 +7,6 @@ import (
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 
 	"istio.io/test-infra/toolbox/poolmanager"
 )
@@ -27,14 +26,12 @@ func (h fakeHandler) RecycleCluster(r *poolmanager.ClusterRequest) error {
 
 func main() {
 	var kubeconfig string
-	var master string
 
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
-	flag.StringVar(&master, "master", "", "master url")
 	flag.Parse()
 
 	// creates the connection
-	config, err := clientcmd.BuildConfigFromFlags(master, kubeconfig)
+	config, err := poolmanager.CreateRESTConfig(kubeconfig)
 	if err != nil {
 		glog.Fatal(err)
 	}
