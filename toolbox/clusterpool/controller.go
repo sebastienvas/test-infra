@@ -12,18 +12,15 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
-
-	"istio.io/test-infra/toolbox/clusterpool/provider"
 )
 
 type ClusterRequestHandler interface {
-	ProvisionCluster(r ClusterRequest) error
-	RecycleCluster(r ClusterRequest) error
+	ProvisionCluster(r *ClusterRequest) error
+	RecycleCluster(r *ClusterRequest) error
 }
 
 type Controller struct {
@@ -49,7 +46,7 @@ type ClusterManagerMode interface {
 }
 
 type ClusterManager struct {
-	provider          provider.ClusterProvider
+	provider          ClusterProvider
 	clustersInstances map[string][]ClusterInstance
 }
 
@@ -59,7 +56,7 @@ func NewController(client *rest.RESTClient, namespace string, resyncPeriod time.
 	informer := cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options meta_v1.ListOptions) (result runtime.Object, err error) {
-				result := ClusterRequest{}.DeepCopyObject()
+				result = knownTypes[ClusterRequestsKind].collection.DeepCopyObject()
 				err = client.Get().
 					Namespace(namespace).
 					Resource(ClusterRequestsKind).
@@ -75,7 +72,7 @@ func NewController(client *rest.RESTClient, namespace string, resyncPeriod time.
 					Watch()
 			},
 		},
-		ClusterRequest{}.DeepCopyObject(),
+		knownTypes[ClusterRequestsKind].object.DeepCopyObject(),
 		resyncPeriod, cache.Indexers{})
 
 	informer.AddEventHandler(
@@ -114,10 +111,10 @@ func (c *Controller) processItem(key string) error {
 	}
 
 	if !exists {
-		err = c.handler.RecycleCluster(obj)
+		err = c.handler.RecycleCluster(obj.(*ClusterRequest))
 
 	} else {
-		err = c.handler.ProvisionCluster(obj)
+		err = c.handler.ProvisionCluster(obj.(*ClusterRequest))
 	}
 
 	c.handleErr(err, key)
@@ -162,7 +159,7 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 	go c.informer.Run(stopCh)
 
 	// wait for the caches to synchronize before starting the worker
-	if !cache.WaitForCacheSync(stopCh, c.informer.HasSynced()) {
+	if !cache.WaitForCacheSync(stopCh, c.informer.HasSynced) {
 		utilruntime.HandleError(fmt.Errorf("Timed out waiting for caches to sync"))
 		return
 	}
@@ -202,12 +199,12 @@ func (c *Controller) processNextItem() bool {
 type fakeHandler struct {
 }
 
-func (h fakeHandler) ProvisionCluster(r ClusterRequest) error {
+func (h fakeHandler) ProvisionCluster(r *ClusterRequest) error {
 	glog.Infof("Created Request %v", r.Name)
 	return nil
 }
 
-func (h fakeHandler) RecycleCluster(r ClusterRequest) error {
+func (h fakeHandler) RecycleCluster(r *ClusterRequest) error {
 	glog.Infof("RecycleCluser %v", r.Name)
 	return nil
 }
@@ -227,14 +224,14 @@ func main() {
 	}
 
 	// creates the clientset
-	clientset, err := kubernetes.NewForConfig(config)
+	restClient, err := rest.RESTClientFor(config)
 	if err != nil {
 		glog.Fatal(err)
 	}
 
 	handler := fakeHandler{}
 
-	controller := NewController(clientset.RESTClient(), v1.NamespaceDefault, 60*time.Second, handler)
+	controller := NewController(restClient, v1.NamespaceDefault, 60*time.Second, handler)
 
 	// Now let's start the controller
 	stop := make(chan struct{})

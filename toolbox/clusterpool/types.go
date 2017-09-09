@@ -11,23 +11,33 @@ const (
 	ClusterRequestsKind  = "ClusterRequest"
 	ClusterRequestName   = "clusterrequests"
 	ClusterInstancesKind = "ClusterInstance"
-	ClusterRequestName   = "clusterinstances"
+	ClusterInstanceName  = "clusterinstances"
 )
 
-type ClusterStatus string
+type ClusterState string
+
+var knownTypes = map[string]struct {
+	object     runtime.Object
+	collection runtime.Object
+}{
+	ClusterRequestsKind: {
+		object:     &ClusterRequest{},
+		collection: &ClusterRequestList{},
+	},
+}
 
 const (
-	CREATING = ClusterStatus("CREATING")
-	READY    = ClusterStatus("READY")
-	IN_USE   = ClusterStatus("IN_USE")
-	DELETED  = ClusterStatus("DELETED ")
+	CREATING = ClusterState("CREATING")
+	READY    = ClusterState("READY")
+	IN_USE   = ClusterState("IN_USE")
+	DELETED  = ClusterState("DELETED ")
 )
 
 type ClusterRequest struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              ClusterRequestSpec `json:"spec,omitempty"`
-	Status            *ClusterStatus     `json:"status,omitempty"`
+	Status            *ClusterState      `json:"status,omitempty"`
 }
 
 type ClusterRequestList struct {
@@ -49,15 +59,15 @@ type ClusterRequestSpec struct {
 }
 
 type ClusterStatus struct {
-	State      ClusterStatus `json:"state,omitempty"`
-	KubeConfig string        `json:"kubeConfig,omitempty"`
+	State      ClusterState `json:"state,omitempty"`
+	KubeConfig string       `json:"kubeConfig,omitempty"`
 }
 
 type ClusterInstance struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              ClusterInstanceSpec `json:"spec,omitempty"`
-	Status            *ClusterStatus      `json:"status,omitempty"`
+	Status            *ClusterState       `json:"status,omitempty"`
 }
 
 type ClusterInstanceList struct {
@@ -71,7 +81,49 @@ type ClusterInstanceSpec struct {
 	ID     string
 }
 
-func (r *ClusterRequest) DeepCopyObject() runtime.Object {
-	//TODO: implement
+func (in *ClusterRequestList) DeepCopyInto(out *ClusterRequestList) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
+	out.Items = in.Items
+}
+
+func (in *ClusterRequestList) DeepCopy() *ClusterRequestList {
+	if in == nil {
+		return nil
+	}
+	out := new(ClusterRequestList)
+	in.DeepCopyInto(out)
+	return out
+}
+
+func (in *ClusterRequestList) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+func (in *ClusterRequest) DeepCopyInto(out *ClusterRequest) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	out.Spec = in.Spec
+	out.Status = in.Status
+}
+
+func (in *ClusterRequest) DeepCopy() *ClusterRequest {
+	if in == nil {
+		return nil
+	}
+	out := new(ClusterRequest)
+	in.DeepCopyInto(out)
+	return out
+}
+
+func (in *ClusterRequest) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
 	return nil
 }
