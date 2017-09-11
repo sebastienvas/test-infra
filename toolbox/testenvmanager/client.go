@@ -1,4 +1,4 @@
-package poolmanager
+package testenvmanager
 
 import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,30 +45,30 @@ func CreateRESTConfig(kubeconfig string) (config *rest.Config, err error) {
 	return
 }
 
-func (in *ClusterRequestList) DeepCopyInto(out *ClusterRequestList) {
+func (in *TestEnvRequestList) DeepCopyInto(out *TestEnvRequestList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	out.Items = in.Items
 }
 
-func (in *ClusterRequestList) DeepCopy() *ClusterRequestList {
+func (in *TestEnvRequestList) DeepCopy() *TestEnvRequestList {
 	if in == nil {
 		return nil
 	}
-	out := new(ClusterRequestList)
+	out := new(TestEnvRequestList)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *ClusterRequestList) DeepCopyObject() runtime.Object {
+func (in *TestEnvRequestList) DeepCopyObject() runtime.Object {
 	if c := in.DeepCopy(); c != nil {
 		return c
 	}
 	return nil
 }
 
-func (in *ClusterRequest) DeepCopyInto(out *ClusterRequest) {
+func (in *TestEnvRequest) DeepCopyInto(out *TestEnvRequest) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
@@ -76,16 +76,16 @@ func (in *ClusterRequest) DeepCopyInto(out *ClusterRequest) {
 	out.Status = in.Status
 }
 
-func (in *ClusterRequest) DeepCopy() *ClusterRequest {
+func (in *TestEnvRequest) DeepCopy() *TestEnvRequest {
 	if in == nil {
 		return nil
 	}
-	out := new(ClusterRequest)
+	out := new(TestEnvRequest)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *ClusterRequest) DeepCopyObject() runtime.Object {
+func (in *TestEnvRequest) DeepCopyObject() runtime.Object {
 	if c := in.DeepCopy(); c != nil {
 		return c
 	}

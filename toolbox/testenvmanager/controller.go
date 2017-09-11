@@ -1,4 +1,4 @@
-package poolmanager
+package testenvmanager
 
 import (
 	"fmt"
@@ -20,16 +20,29 @@ const (
 	Version = "v1"
 )
 
-type ClusterRequestHandler interface {
-	ProvisionCluster(r *ClusterRequest) error
-	RecycleCluster(r *ClusterRequest) error
+type TestEnvRequestHandler interface {
+	ProvisionCluster(r *TestEnvRequest) error
+	RecycleCluster(r *TestEnvRequest) error
+}
+
+type TestEnvInstanceHandler interface {
 }
 
 type Controller struct {
-	dynamic  *rest.RESTClient
-	queue    workqueue.RateLimitingInterface
+	dynamic         *rest.RESTClient
+	queue           workqueue.RateLimitingInterface
+	requestHandler  requestHandler
+	instanceHandler instanceHandler
+}
+
+type requestHandler struct {
 	informer cache.SharedIndexInformer
-	handler  ClusterRequestHandler
+	handler  TestEnvRequestHandler
+}
+
+type instanceHandler struct {
+	informer cache.SharedIndexInformer
+	handler  TestEnvInstanceHandler
 }
 
 type OnDemand struct {
@@ -43,25 +56,42 @@ type FixedSizePools struct {
 }
 
 type ClusterManagerMode interface {
-	Get(ClusterConfig) (ClusterInstance, error)
-	Recycle(ClusterInstance)
+	Get(ClusterConfig) (TestEnvInstance, error)
+	Recycle(TestEnvInstance)
 }
 
 type ClusterManager struct {
 	provider          ClusterProvider
-	clustersInstances map[string][]ClusterInstance
+	clustersInstances map[string][]TestEnvInstance
 }
 
-func NewController(client *rest.RESTClient, namespace string, resyncPeriod time.Duration, handler ClusterRequestHandler) *Controller {
+func NewController(
+	client *rest.RESTClient,
+	namespace string,
+	resyncPeriod time.Duration,
+	requestHandler TestEnvRequestHandler,
+	instanceHandler TestEnvInstanceHandler) *Controller {
 	queue := workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "q1")
 
+	c := &Controller{
+		dynamic: client,
+		queue:   queue,
+	}
+
+	c.setRequestInformer(client, namespace, resyncPeriod, requestHandler)
+	c.setInstanceInformer(client, namespace, resyncPeriod, instanceHandler)
+
+	return c
+}
+
+func (c *Controller) setRequestInformer(client *rest.RESTClient, namespace string, resyncPeriod time.Duration, handler TestEnvRequestHandler) {
 	informer := cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options meta_v1.ListOptions) (result runtime.Object, err error) {
-				result = knownTypes[ClusterRequestsKind].collection.DeepCopyObject()
+				result = knownTypes[TestEnvRequestsKind].collection.DeepCopyObject()
 				err = client.Get().
 					Namespace(namespace).
-					Resource(ClusterRequestsKind).
+					Resource(TestEnvRequestsKind).
 					Do().
 					Into(result)
 				return
@@ -70,11 +100,11 @@ func NewController(client *rest.RESTClient, namespace string, resyncPeriod time.
 				return client.Get().
 					Prefix("watch").
 					Namespace(namespace).
-					Resource(ClusterRequestsKind).
+					Resource(TestEnvRequestsKind).
 					Watch()
 			},
 		},
-		knownTypes[ClusterRequestsKind].object.DeepCopyObject(),
+		knownTypes[TestEnvRequestsKind].object.DeepCopyObject(),
 		resyncPeriod, cache.Indexers{})
 
 	informer.AddEventHandler(
@@ -83,43 +113,115 @@ func NewController(client *rest.RESTClient, namespace string, resyncPeriod time.
 			AddFunc: func(obj interface{}) {
 				key, err := cache.MetaNamespaceIndexFunc(obj)
 				if err == nil {
-					queue.Add(key)
+					c.queue.Add(key)
 				}
 
 			},
 			DeleteFunc: func(obj interface{}) {
 				key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 				if err == nil {
-					queue.Add(key)
+					c.queue.Add(key)
 				}
 			},
 		},
 	)
-
-	return &Controller{
-		dynamic:  client,
-		queue:    queue,
+	c.requestHandler = requestHandler{
 		informer: informer,
 		handler:  handler,
 	}
 }
 
-func (c *Controller) processItem(key string) error {
-	glog.Infof("Processing change to Pod %s", key)
+func (c *Controller) setInstanceInformer(client *rest.RESTClient, namespace string, resyncPeriod time.Duration, handler TestEnvInstanceHandler) {
+	informer := cache.NewSharedIndexInformer(
+		&cache.ListWatch{
+			ListFunc: func(options meta_v1.ListOptions) (result runtime.Object, err error) {
+				result = knownTypes[TestEnvInstancesKind].collection.DeepCopyObject()
+				err = client.Get().
+					Namespace(namespace).
+					Resource(TestEnvInstancesKind).
+					Do().
+					Into(result)
+				return
+			},
+			WatchFunc: func(options meta_v1.ListOptions) (watch.Interface, error) {
+				return client.Get().
+					Prefix("watch").
+					Namespace(namespace).
+					Resource(TestEnvInstancesKind).
+					Watch()
+			},
+		},
+		knownTypes[TestEnvInstancesKind].object.DeepCopyObject(),
+		resyncPeriod, cache.Indexers{})
+
+	informer.AddEventHandler(
+		cache.ResourceEventHandlerFuncs{
+
+			AddFunc: func(obj interface{}) {
+				key, err := cache.MetaNamespaceIndexFunc(obj)
+				if err == nil {
+					c.queue.Add(key)
+				}
+
+			},
+			DeleteFunc: func(obj interface{}) {
+				key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+				if err == nil {
+					c.queue.Add(key)
+				}
+			},
+		},
+	)
+	c.instanceHandler = instanceHandler{
+		informer: informer,
+		handler:  handler,
+	}
+}
+
+func (c *Controller) processRequest(key string) bool {
+	glog.Infof("Processing change to Request %s", key)
 	var err error
-	obj, exists, err := c.informer.GetIndexer().GetByKey(key)
+	obj, exists, err := c.requestHandler.informer.GetIndexer().GetByKey(key)
 	if err != nil {
-		return fmt.Errorf("Error fetching object with key %s from store: %v", key, err)
+		return false
 	}
 
 	if !exists {
-		err = c.handler.RecycleCluster(obj.(*ClusterRequest))
+		err = c.requestHandler.handler.RecycleCluster(obj.(*TestEnvRequest))
 
 	} else {
-		err = c.handler.ProvisionCluster(obj.(*ClusterRequest))
+		err = c.requestHandler.handler.ProvisionCluster(obj.(*TestEnvRequest))
 	}
+	if err != nil {
+		c.handleErr(err, key)
+	}
+	return true
+}
 
-	c.handleErr(err, key)
+func (c *Controller) processInstance(key string) bool {
+	glog.Infof("Processing change to Instance %s", key)
+	//obj, exists, err := c.instanceHandler.informer.GetIndexer().GetByKey(key)
+	//if err != nil {
+	//	return fmt.Errorf("Error fetching object with key %s from store: %v", key, err)
+	//}
+
+	// TODO
+
+	return true
+}
+
+func (c *Controller) processItem(key string) error {
+	var (
+		err   error
+		found bool
+	)
+	found = c.processRequest(key)
+	if !found {
+		found = c.processInstance(key)
+		if !found {
+			fmt.Errorf("Error fetching object with key %s from store: %v", key, err)
+		}
+	}
 	return nil
 }
 
@@ -158,10 +260,11 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 
 	glog.Info("Starting kubewatch controller")
 
-	go c.informer.Run(stopCh)
+	go c.requestHandler.informer.Run(stopCh)
+	go c.instanceHandler.informer.Run(stopCh)
 
 	// wait for the caches to synchronize before starting the worker
-	if !cache.WaitForCacheSync(stopCh, c.informer.HasSynced) {
+	if !cache.WaitForCacheSync(stopCh, c.HasSynced) {
 		utilruntime.HandleError(fmt.Errorf("Timed out waiting for caches to sync"))
 		return
 	}
@@ -171,6 +274,18 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 	// runWorker will loop until "something bad" happens.  The .Until will
 	// then rekick the worker after one second
 	wait.Until(c.runWorker, time.Second, stopCh)
+}
+
+func (c *Controller) HasSynced() bool {
+	if !c.instanceHandler.informer.HasSynced() {
+		glog.V(2).Infof("Request Controller is syncing")
+		return false
+	}
+	if !c.requestHandler.informer.HasSynced() {
+		glog.V(2).Infof("Instance Controller is syncing")
+		return false
+	}
+	return true
 }
 
 func (c *Controller) runWorker() {

@@ -8,18 +8,23 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 
-	"istio.io/test-infra/toolbox/poolmanager"
+	"istio.io/test-infra/toolbox/testenvmanager"
 )
 
-type fakeHandler struct {
+type requestHandler struct {
 }
 
-func (h fakeHandler) ProvisionCluster(r *poolmanager.ClusterRequest) error {
+type instanceHandler struct {
+}
+
+
+
+func (h requestHandler) ProvisionCluster(r *testenvmanager.TestEnvRequest) error {
 	glog.Infof("Created Request %v", r.Name)
 	return nil
 }
 
-func (h fakeHandler) RecycleCluster(r *poolmanager.ClusterRequest) error {
+func (h requestHandler) RecycleCluster(r *testenvmanager.TestEnvRequest) error {
 	glog.Infof("RecycleCluser %v", r.Name)
 	return nil
 }
@@ -31,7 +36,7 @@ func main() {
 	flag.Parse()
 
 	// creates the connection
-	config, err := poolmanager.CreateRESTConfig(kubeconfig)
+	config, err := testenvmanager.CreateRESTConfig(kubeconfig)
 	if err != nil {
 		glog.Fatal(err)
 	}
@@ -42,9 +47,10 @@ func main() {
 		glog.Fatal(err)
 	}
 
-	handler := fakeHandler{}
+	rh := requestHandler{}
+	ih := instanceHandler{}
 
-	controller := poolmanager.NewController(restClient, v1.NamespaceDefault, 60*time.Second, handler)
+	controller := testenvmanager.NewController(restClient, v1.NamespaceDefault, 60*time.Second, rh, ih)
 
 	// Now let's start the controller
 	stop := make(chan struct{})
