@@ -2,6 +2,7 @@ package testenvmanager
 
 import (
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/golang/glog"
@@ -18,85 +19,43 @@ import (
 type Event int
 
 const (
-	Group   = "testing.istio.io"
-	Version = "v1"
-	EventAdd = iota
+	Group       = "testing.istio.io"
+	Version     = "v1"
+	EventAdd    = iota
 	EventUpdate = iota
 	EventDelete = iota
 )
 
-type Handler interface {
-	Apply(obj interface{}, event Event)
+type EventHandler interface {
+	Apply(obj interface{}, event Event) error
 }
 
-type TestEnvRequestHandler interface {
-	ProvisionCluster(*TestEnvRequest) error
-	RecycleCluster(*TestEnvRequest) error
+type CacheHandler struct {
+	informer cache.SharedIndexInformer
+	handler  EventHandler
 }
-
-type TestEnvInstanceHandler interface {
-	CreateInstance(*TestEnvInstance) error
-	UpdateInstance(*TestEnvInstance) error
-	DeleteInstance(*TestEnvInstance) error
-}
-
-
-
 
 type Controller struct {
-	dynamic         *rest.RESTClient
-	queue           workqueue.RateLimitingInterface
-	requestHandler  requestHandler
-	instanceHandler instanceHandler
+	dynamic                         *rest.RESTClient
+	queue                           workqueue.RateLimitingInterface
+	requestHandler, instanceHandler *CacheHandler
 }
-
 
 type Task struct {
-	event Event
-	handler func(interface{}, Event) error
-	obj interface{}
+	event   Event
+	handler EventHandler
+	obj     interface{}
 }
 
-func NewTask(handler Handler, obj interface{}, event Event) Task {
+func NewTask(handler EventHandler, obj interface{}, event Event) Task {
 	return Task{handler: handler, obj: obj, event: event}
-}
-
-type requestHandler struct {
-	informer cache.SharedIndexInformer
-	handler  TestEnvRequestHandler
-}
-
-type instanceHandler struct {
-	informer cache.SharedIndexInformer
-	handler  TestEnvInstanceHandler
-}
-
-type OnDemand struct {
-	cm ClusterManager
-}
-
-type FixedSizePools struct {
-	cm        ClusterManager
-	LifeSpan  time.Duration
-	QueueSize int
-}
-
-type ClusterManagerMode interface {
-	Get(ClusterConfig) (TestEnvInstance, error)
-	Recycle(TestEnvInstance)
-}
-
-type ClusterManager struct {
-	provider          ClusterProvider
-	clustersInstances map[string][]TestEnvInstance
 }
 
 func NewController(
 	client *rest.RESTClient,
 	namespace string,
 	resyncPeriod time.Duration,
-	requestHandler TestEnvRequestHandler,
-	instanceHandler TestEnvInstanceHandler) *Controller {
+	requestHandler, instanceHandler EventHandler) *Controller {
 	queue := workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "q1")
 
 	c := &Controller{
@@ -104,20 +63,27 @@ func NewController(
 		queue:   queue,
 	}
 
-	c.setRequestInformer(client, namespace, resyncPeriod, requestHandler)
-	c.setInstanceInformer(client, namespace, resyncPeriod, instanceHandler)
+	c.requestHandler = &CacheHandler{
+		informer: c.createInstanceInformer(client, namespace, TestEnvRequestsKind, resyncPeriod, requestHandler),
+		handler:  requestHandler,
+	}
+
+	c.instanceHandler = &CacheHandler{
+		informer: c.createInstanceInformer(client, namespace, TestEnvInstancesKind, resyncPeriod, instanceHandler),
+		handler:  instanceHandler,
+	}
 
 	return c
 }
 
-func (c *Controller) setRequestInformer(client *rest.RESTClient, namespace string, resyncPeriod time.Duration, handler Handler) {
+func (c *Controller) createInstanceInformer(client *rest.RESTClient, namespace, kind string, resyncPeriod time.Duration, handler EventHandler) cache.SharedIndexInformer {
 	informer := cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options meta_v1.ListOptions) (result runtime.Object, err error) {
-				result = knownTypes[TestEnvRequestsKind].collection.DeepCopyObject()
+				result = knownTypes[kind].collection.DeepCopyObject()
 				err = client.Get().
 					Namespace(namespace).
-					Resource(TestEnvRequestsKind).
+					Resource(kind).
 					Do().
 					Into(result)
 				return
@@ -126,127 +92,30 @@ func (c *Controller) setRequestInformer(client *rest.RESTClient, namespace strin
 				return client.Get().
 					Prefix("watch").
 					Namespace(namespace).
-					Resource(TestEnvRequestsKind).
+					Resource(kind).
 					Watch()
 			},
 		},
-		knownTypes[TestEnvRequestsKind].object.DeepCopyObject(),
+		knownTypes[kind].object.DeepCopyObject(),
 		resyncPeriod, cache.Indexers{})
 
 	informer.AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 
 			AddFunc: func(obj interface{}) {
-				key, err := cache.MetaNamespaceIndexFunc(obj)
-				if err == nil {
-					c.queue.Add(key)
-				}
-
-			},
-			DeleteFunc: func(obj interface{}) {
-				key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
-				if err == nil {
-					c.queue.Add(key)
-				}
-			},
-		},
-	)
-	c.requestHandler = requestHandler{
-		informer: informer,
-		handler:  handler,
-	}
-}
-
-func (c *Controller) setInstanceInformer(client *rest.RESTClient, namespace string, resyncPeriod time.Duration, handler Handler) {
-	informer := cache.NewSharedIndexInformer(
-		&cache.ListWatch{
-			ListFunc: func(options meta_v1.ListOptions) (result runtime.Object, err error) {
-				result = knownTypes[TestEnvInstancesKind].collection.DeepCopyObject()
-				err = client.Get().
-					Namespace(namespace).
-					Resource(TestEnvInstancesKind).
-					Do().
-					Into(result)
-				return
-			},
-			WatchFunc: func(options meta_v1.ListOptions) (watch.Interface, error) {
-				return client.Get().
-					Prefix("watch").
-					Namespace(namespace).
-					Resource(TestEnvInstancesKind).
-					Watch()
-			},
-		},
-		knownTypes[TestEnvInstancesKind].object.DeepCopyObject(),
-		resyncPeriod, cache.Indexers{})
-
-	informer.AddEventHandler(
-		cache.ResourceEventHandlerFuncs{
-
-			AddFunc: func(obj interface{}) {
-					c.queue.Add(NewTask(handler.Apply, obj, EventAdd))
+				c.queue.Add(NewTask(handler, obj, EventAdd))
 			},
 			UpdateFunc: func(old, cur interface{}) {
 				if !reflect.DeepEqual(old, cur) {
-					c.queue.Add(NewTask(handler.Apply, cur, EventUpdate))
+					c.queue.Add(NewTask(handler, cur, EventUpdate))
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
-				c.queue.Add(NewTask(handler.Apply, obj, EventDelete))
+				c.queue.Add(NewTask(handler, obj, EventDelete))
 			},
 		},
 	)
-	c.instanceHandler = instanceHandler{
-		informer: informer,
-		handler:  handler,
-	}
-}
-
-func (c *Controller) processRequest(key string) bool {
-	glog.Infof("Processing change to Request %s", key)
-	var err error
-	obj, exists, err := c.requestHandler.informer.GetIndexer().GetByKey(key)
-	if err != nil {
-		return false
-	}
-
-	if !exists {
-		err = c.requestHandler.handler.RecycleCluster(obj.(*TestEnvRequest))
-
-	} else {
-		err = c.requestHandler.handler.ProvisionCluster(obj.(*TestEnvRequest))
-	}
-	if err != nil {
-		c.handleErr(err, key)
-	}
-	return true
-}
-
-func (c *Controller) processInstance(key string) bool {
-	glog.Infof("Processing change to Instance %s", key)
-	//obj, exists, err := c.instanceHandler.informer.GetIndexer().GetByKey(key)
-	//if err != nil {
-	//	return fmt.Errorf("Error fetching object with key %s from store: %v", key, err)
-	//}
-
-	// TODO
-
-	return true
-}
-
-func (c *Controller) processItem(key string) error {
-	var (
-		err   error
-		found bool
-	)
-	found = c.processRequest(key)
-	if !found {
-		found = c.processInstance(key)
-		if !found {
-			fmt.Errorf("Error fetching object with key %s from store: %v", key, err)
-		}
-	}
-	return nil
+	return informer
 }
 
 // handleErr checks if an error happened and makes sure we will retry later.
@@ -321,6 +190,7 @@ func (c *Controller) runWorker() {
 
 func (c *Controller) processNextItem() bool {
 	// Wait until there is a new item in the working queue
+	var err error
 	key, quit := c.queue.Get()
 	if quit {
 		return false
@@ -331,7 +201,12 @@ func (c *Controller) processNextItem() bool {
 	defer c.queue.Done(key)
 
 	// Invoke the method containing the business logic
-	err := c.processItem(key.(string))
+	t, ok := key.(Task)
+	if !ok {
+		err = fmt.Errorf("Could not extract Handler from task %v", key)
+	}
+
+	err = t.handler.Apply(t.obj, t.event)
 	// Handle the error if something went wrong during the execution of the business logic
 	c.handleErr(err, key)
 	return true

@@ -8,10 +8,10 @@ import (
 )
 
 const (
-	TestEnvRequestsKind  = "ClusterRequest"
-	TestEnvRequestName   = "clusterrequests"
-	TestEnvInstancesKind = "ClusterInstance"
-	TestEnvInstanceName  = "clusterinstances"
+	TestEnvRequestsKind   = "ClusterRequest"
+	TestEnvRequestPlural  = "clusterrequests"
+	TestEnvInstancesKind  = "ClusterInstance"
+	TestEnvInstancePlural = "clusterinstances"
 )
 
 type TestEnvState string
@@ -23,6 +23,10 @@ var knownTypes = map[string]struct {
 	TestEnvRequestsKind: {
 		object:     &TestEnvRequest{},
 		collection: &TestEnvRequestList{},
+	},
+	TestEnvInstancesKind: {
+		object:     &TestEnvInstance{},
+		collection: &TestEnvInstanceList{},
 	},
 }
 

@@ -1,6 +1,11 @@
 package testenvmanager
 
 import (
+	"fmt"
+
+	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -43,6 +48,43 @@ func CreateRESTConfig(kubeconfig string) (config *rest.Config, err error) {
 	config.NegotiatedSerializer = serializer.DirectCodecFactory{CodecFactory: serializer.NewCodecFactory(types)}
 
 	return
+}
+
+// RegisterResources sends a request to create CRDs and waits for them to initialize
+func RegisterResources(config *rest.Config) error {
+	c, err := apiextensionsclient.NewForConfig(config)
+	if err != nil {
+		return err
+	}
+
+	for _, s := range []struct{ p, k string }{
+		{
+			p: TestEnvRequestPlural,
+			k: TestEnvRequestsKind,
+		},
+		{
+			p: TestEnvInstancePlural,
+			k: TestEnvInstancesKind,
+		}} {
+		crd := &apiextensionsv1beta1.CustomResourceDefinition{
+			ObjectMeta: meta_v1.ObjectMeta{
+				Name: fmt.Sprintf("%s.%s", s.p, Group),
+			},
+			Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
+				Group:   Group,
+				Version: Version,
+				Scope:   apiextensionsv1beta1.NamespaceScoped,
+				Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
+					Plural: s.p,
+					Kind:   s.k,
+				},
+			},
+		}
+		if _, err := c.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd); err != nil && !apierrors.IsAlreadyExists(err) {
+			return err
+		}
+	}
+	return nil
 }
 
 func (in *TestEnvRequestList) DeepCopyInto(out *TestEnvRequestList) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"time"
 
 	"github.com/golang/glog"
@@ -11,22 +12,33 @@ import (
 	"istio.io/test-infra/toolbox/testenvmanager"
 )
 
-type requestHandler struct {
+type fakeHandler struct {
 }
 
-type instanceHandler struct {
-}
+func (h fakeHandler) Apply(o interface{}, e testenvmanager.Event) error {
+	var n string
+	r, ok := o.(testenvmanager.TestEnvRequest)
+	if !ok {
+		i, ok := o.(testenvmanager.TestEnvInstance)
+		if !ok {
+			return fmt.Errorf("cannot construct request from %v", o)
+		} else {
+			n = i.Name
+		}
 
-
-
-func (h requestHandler) ProvisionCluster(r *testenvmanager.TestEnvRequest) error {
-	glog.Infof("Created Request %v", r.Name)
-	return nil
-}
-
-func (h requestHandler) RecycleCluster(r *testenvmanager.TestEnvRequest) error {
-	glog.Infof("RecycleCluser %v", r.Name)
-	return nil
+	} else {
+		n = r.Name
+	}
+	switch e {
+	case testenvmanager.EventAdd:
+		glog.Infof("Created Request %s", n)
+		return nil
+	case testenvmanager.EventDelete:
+		glog.Infof("Recycle Cluser %v", n)
+		return nil
+	default:
+		return fmt.Errorf("unkown event")
+	}
 }
 
 func main() {
@@ -47,8 +59,8 @@ func main() {
 		glog.Fatal(err)
 	}
 
-	rh := requestHandler{}
-	ih := instanceHandler{}
+	rh := fakeHandler{}
+	ih := fakeHandler{}
 
 	controller := testenvmanager.NewController(restClient, v1.NamespaceDefault, 60*time.Second, rh, ih)
 
