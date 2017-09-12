@@ -133,3 +133,49 @@ func (in *TestEnvRequest) DeepCopyObject() runtime.Object {
 	}
 	return nil
 }
+
+func (in *TestEnvInstanceList) DeepCopyInto(out *TestEnvInstanceList) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
+	out.Items = in.Items
+}
+
+func (in *TestEnvInstanceList) DeepCopy() *TestEnvInstanceList {
+	if in == nil {
+		return nil
+	}
+	out := new(TestEnvInstanceList)
+	in.DeepCopyInto(out)
+	return out
+}
+
+func (in *TestEnvInstanceList) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+func (in *TestEnvInstance) DeepCopyInto(out *TestEnvInstance) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	out.Spec = in.Spec
+	out.Status = in.Status
+}
+
+func (in *TestEnvInstance) DeepCopy() *TestEnvInstance {
+	if in == nil {
+		return nil
+	}
+	out := new(TestEnvInstance)
+	in.DeepCopyInto(out)
+	return out
+}
+
+func (in *TestEnvInstance) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
