@@ -8,10 +8,10 @@ import (
 )
 
 const (
-	TestEnvRequestsKind   = "ClusterRequest"
-	TestEnvRequestPlural  = "clusterrequests"
-	TestEnvInstancesKind  = "ClusterInstance"
-	TestEnvInstancePlural = "clusterinstances"
+	TestEnvRequestsKind   = "TestEnvRequest"
+	TestEnvRequestPlural  = "testenvrequests"
+	TestEnvInstancesKind  = "TestEnvInstance"
+	TestEnvInstancePlural = "testenvinstances"
 )
 
 type TestEnvState string
@@ -20,11 +20,11 @@ var knownTypes = map[string]struct {
 	object     runtime.Object
 	collection runtime.Object
 }{
-	TestEnvRequestsKind: {
+	TestEnvRequestPlural: {
 		object:     &TestEnvRequest{},
 		collection: &TestEnvRequestList{},
 	},
-	TestEnvInstancesKind: {
+	TestEnvInstancePlural: {
 		object:     &TestEnvInstance{},
 		collection: &TestEnvInstanceList{},
 	},
@@ -77,7 +77,7 @@ type TestEnvInstance struct {
 type TestEnvInstanceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []*TestEnvRequest `json:"items"`
+	Items           []*TestEnvInstance `json:"items"`
 }
 
 type TestEnvInstanceSpec struct {

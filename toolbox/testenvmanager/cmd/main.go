@@ -52,6 +52,9 @@ func main() {
 	if err != nil {
 		glog.Fatal(err)
 	}
+	if err := testenvmanager.RegisterResources(config); err != nil {
+		glog.Fatal(err)
+	}
 
 	// creates the clientset
 	restClient, err := rest.RESTClientFor(config)

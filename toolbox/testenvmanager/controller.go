@@ -64,12 +64,12 @@ func NewController(
 	}
 
 	c.requestHandler = &CacheHandler{
-		informer: c.createInstanceInformer(client, namespace, TestEnvRequestsKind, resyncPeriod, requestHandler),
+		informer: c.createInstanceInformer(client, namespace, TestEnvRequestPlural, resyncPeriod, requestHandler),
 		handler:  requestHandler,
 	}
 
 	c.instanceHandler = &CacheHandler{
-		informer: c.createInstanceInformer(client, namespace, TestEnvInstancesKind, resyncPeriod, instanceHandler),
+		informer: c.createInstanceInformer(client, namespace, TestEnvInstancePlural, resyncPeriod, instanceHandler),
 		handler:  instanceHandler,
 	}
 
