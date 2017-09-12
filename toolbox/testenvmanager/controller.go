@@ -15,24 +15,50 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
+type Event int
+
 const (
 	Group   = "testing.istio.io"
 	Version = "v1"
+	EventAdd = iota
+	EventUpdate = iota
+	EventDelete = iota
 )
 
+type Handler interface {
+	Apply(obj interface{}, event Event)
+}
+
 type TestEnvRequestHandler interface {
-	ProvisionCluster(r *TestEnvRequest) error
-	RecycleCluster(r *TestEnvRequest) error
+	ProvisionCluster(*TestEnvRequest) error
+	RecycleCluster(*TestEnvRequest) error
 }
 
 type TestEnvInstanceHandler interface {
+	CreateInstance(*TestEnvInstance) error
+	UpdateInstance(*TestEnvInstance) error
+	DeleteInstance(*TestEnvInstance) error
 }
+
+
+
 
 type Controller struct {
 	dynamic         *rest.RESTClient
 	queue           workqueue.RateLimitingInterface
 	requestHandler  requestHandler
 	instanceHandler instanceHandler
+}
+
+
+type Task struct {
+	event Event
+	handler func(interface{}, Event) error
+	obj interface{}
+}
+
+func NewTask(handler Handler, obj interface{}, event Event) Task {
+	return Task{handler: handler, obj: obj, event: event}
 }
 
 type requestHandler struct {
@@ -84,7 +110,7 @@ func NewController(
 	return c
 }
 
-func (c *Controller) setRequestInformer(client *rest.RESTClient, namespace string, resyncPeriod time.Duration, handler TestEnvRequestHandler) {
+func (c *Controller) setRequestInformer(client *rest.RESTClient, namespace string, resyncPeriod time.Duration, handler Handler) {
 	informer := cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options meta_v1.ListOptions) (result runtime.Object, err error) {
@@ -131,7 +157,7 @@ func (c *Controller) setRequestInformer(client *rest.RESTClient, namespace strin
 	}
 }
 
-func (c *Controller) setInstanceInformer(client *rest.RESTClient, namespace string, resyncPeriod time.Duration, handler TestEnvInstanceHandler) {
+func (c *Controller) setInstanceInformer(client *rest.RESTClient, namespace string, resyncPeriod time.Duration, handler Handler) {
 	informer := cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options meta_v1.ListOptions) (result runtime.Object, err error) {
@@ -158,17 +184,15 @@ func (c *Controller) setInstanceInformer(client *rest.RESTClient, namespace stri
 		cache.ResourceEventHandlerFuncs{
 
 			AddFunc: func(obj interface{}) {
-				key, err := cache.MetaNamespaceIndexFunc(obj)
-				if err == nil {
-					c.queue.Add(key)
+					c.queue.Add(NewTask(handler.Apply, obj, EventAdd))
+			},
+			UpdateFunc: func(old, cur interface{}) {
+				if !reflect.DeepEqual(old, cur) {
+					c.queue.Add(NewTask(handler.Apply, cur, EventUpdate))
 				}
-
 			},
 			DeleteFunc: func(obj interface{}) {
-				key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
-				if err == nil {
-					c.queue.Add(key)
-				}
+				c.queue.Add(NewTask(handler.Apply, obj, EventDelete))
 			},
 		},
 	)
