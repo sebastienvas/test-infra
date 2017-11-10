@@ -7,6 +7,7 @@ import (
 
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 
 	"istio.io/test-infra/toolbox/testenvmanager"
@@ -65,10 +66,29 @@ func main() {
 		glog.Fatal(err)
 	}
 
+	rc := testenvmanager.NewCRDClient(restClient, scheme, v1.NamespaceDefault, testenvmanager.TestEnvRequestPlural)
+	ic := testenvmanager.NewCRDClient(restClient, scheme, v1.NamespaceDefault, testenvmanager.TestEnvInstancePlural)
+
+	req := &testenvmanager.TestEnvRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "testenv-req-",
+		},
+		Spec: testenvmanager.TestEnvRequestSpec{
+			Config: testenvmanager.ClusterConfig{
+				NumCoresPerNode: 4,
+				TTL:             1 * time.Hour,
+				RBAC:            true,
+				NumNodes:        3,
+			},
+		},
+	}
+
+	rc.Create(req)
+
 	rh := fakeHandler{}
 	ih := fakeHandler{}
 
-	controller := testenvmanager.NewController(restClient, v1.NamespaceDefault, 60*time.Second, scheme, rh, ih)
+	controller := testenvmanager.NewController(rc, ic, 60*time.Second, rh, ih)
 
 	// Now let's start the controller
 	stop := make(chan struct{})

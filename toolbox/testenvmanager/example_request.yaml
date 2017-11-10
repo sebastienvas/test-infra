@@ -1,0 +1,12 @@
+apiVersion: "testing.istio.io/v1"
+kind: TestEnvRequest
+metadata:
+  generateName: testenv-request-
+spec:
+  config:
+    ttl: 6
+    numCoresPerNode: 1
+    numNodes: 4
+    version: "1.7.2"
+    rbac: True
+

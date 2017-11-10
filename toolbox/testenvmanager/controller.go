@@ -6,10 +6,8 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 )
@@ -49,19 +47,14 @@ func NewTask(handler EventHandler, obj interface{}, event Event) Task {
 }
 
 func NewController(
-	client *rest.RESTClient,
-	namespace string,
+	rc, ic *crdclient,
 	resyncPeriod time.Duration,
-	scheme *runtime.Scheme,
 	requestHandler, instanceHandler EventHandler) *Controller {
 	queue := workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "q1")
 
 	c := &Controller{
 		queue: queue,
 	}
-
-	rc := NewCRDClient(client, scheme, namespace, TestEnvRequestPlural)
-	ic := NewCRDClient(client, scheme, namespace, TestEnvInstancePlural)
 
 	c.requestHandler = &CacheHandler{
 		informer: c.createInstanceInformer(rc.NewListWatch(), TestEnvRequestPlural, resyncPeriod, requestHandler),
